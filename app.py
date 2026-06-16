@@ -230,53 +230,24 @@ elif page=="Manage Food":
             use_container_width=True
         )
 
-    elif action=="Add":
+    elif action == "Add":
 
-        provider=st.number_input(
-            "Provider ID",
-            step=1
-        )
+    provider = st.number_input("Provider ID", step=1)
+    food = st.text_input("Food Name")
+    quantity = st.number_input("Quantity", step=1)
 
-        food=st.text_input(
-            "Food Name"
-        )
+    if st.button("Add Food"):
 
-        quantity=st.number_input(
-            "Quantity",
-            step=1
-        )
+        cur = conn.cursor()
 
-        if st.button(
-            "Add Food"
-        ):
+        cur.execute("""
+        INSERT INTO food (provider_id, food_name, quantity)
+        VALUES (?, ?, ?)
+        """, (provider, food, quantity))
 
-            cur = conn.cursor()
+        conn.commit()
 
-cur.execute("""
-INSERT INTO food (provider_id, food_name, quantity)
-VALUES (?, ?, ?)
-""", (provider, food, quantity))
-
-conn.commit()
-
-                cur.execute("""
-INSERT INTO food (provider_id, food_name, quantity)
-VALUES (?, ?, ?)
-""", (provider, food, quantity))
-                """,
-
-                (
-                    provider,
-                    food,
-                    quantity
-                )
-            )
-
-            conn.commit()
-
-            st.success(
-                "Food Added Successfully"
-            )
+        st.success("Food Added Successfully")
             # ---------------- SQL ANALYSIS ----------------
 
 elif page=="SQL Analysis":
