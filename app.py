@@ -1,49 +1,43 @@
 import streamlit as st
 import pandas as pd
-from db_connection import get_connection
+import sqlite3
 
-# ---------------- DB CONNECTION ----------------
-conn = get_connection()
-cursor = conn.cursor()
+# ---------------- DATABASE CONNECTION ----------------
+conn = sqlite3.connect("local_food_wastage.db", check_same_thread=False)
 
-# ---------------- CREATE TABLES ----------------
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS providers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT
-)
-""")
+# ---------------- LOAD CSV DATA INTO DB ----------------
+def load_csv_to_db():
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS receivers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT
-)
-""")
+    providers_df = pd.read_csv("/mnt/data/providers_data.csv")
+    receivers_df = pd.read_csv("/mnt/data/receivers_data.csv")
+    food_df = pd.read_csv("/mnt/data/food_listings_data.csv")
+    claims_df = pd.read_csv("/mnt/data/claims_data.csv")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS food (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    food_name TEXT,
-    quantity INTEGER,
-    provider_id INTEGER
-)
-""")
+    # Clean & map columns
+    providers_df = providers_df[["Provider_ID", "Name"]]
+    providers_df.columns = ["id", "name"]
+    providers_df.to_sql("providers", conn, if_exists="replace", index=False)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS claims (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    food_id INTEGER,
-    receiver_id INTEGER,
-    status TEXT
-)
-""")
+    receivers_df = receivers_df[["Receiver_ID", "Name"]]
+    receivers_df.columns = ["id", "name"]
+    receivers_df.to_sql("receivers", conn, if_exists="replace", index=False)
 
-conn.commit()
+    food_df = food_df[["Food_ID", "Food_Name", "Quantity", "Provider_ID"]]
+    food_df.columns = ["id", "food_name", "quantity", "provider_id"]
+    food_df.to_sql("food", conn, if_exists="replace", index=False)
 
-# ---------------- STREAMLIT UI ----------------
+    claims_df = claims_df[["Claim_ID", "Food_ID", "Receiver_ID", "Status"]]
+    claims_df.columns = ["id", "food_id", "receiver_id", "status"]
+    claims_df.to_sql("claims", conn, if_exists="replace", index=False)
+
+
+# Load data once per run
+load_csv_to_db()
+
+# ---------------- UI CONFIG ----------------
 st.set_page_config(page_title="Food Wastage System", layout="wide")
 
+# ---------------- SIDEBAR ----------------
 page = st.sidebar.radio(
     "Navigation",
     ["Dashboard", "Providers", "Receivers", "Food", "Claims", "Analysis"]
@@ -52,7 +46,7 @@ page = st.sidebar.radio(
 # ---------------- DASHBOARD ----------------
 if page == "Dashboard":
 
-    st.title("🍲 Food Wastage Dashboard")
+    st.title("🍲 Food Wastage Management Dashboard")
 
     providers = pd.read_sql("SELECT COUNT(*) AS total FROM providers", conn)
     receivers = pd.read_sql("SELECT COUNT(*) AS total FROM receivers", conn)
@@ -63,91 +57,60 @@ if page == "Dashboard":
 
     c1.metric("Providers", providers["total"][0])
     c2.metric("Receivers", receivers["total"][0])
-    c3.metric("Food", food["total"][0])
+    c3.metric("Food Listings", food["total"][0])
     c4.metric("Claims", claims["total"][0])
 
 # ---------------- PROVIDERS ----------------
 elif page == "Providers":
 
-    st.title("Providers")
-
-    name = st.text_input("Provider Name")
-
-    if st.button("Add Provider"):
-        if name:
-            cursor.execute("INSERT INTO providers (name) VALUES (?)", (name,))
-            conn.commit()
-            st.success("Provider Added")
+    st.title("Providers Data")
 
     df = pd.read_sql("SELECT * FROM providers", conn)
-    st.dataframe(df)
+    st.dataframe(df, use_container_width=True)
 
 # ---------------- RECEIVERS ----------------
 elif page == "Receivers":
 
-    st.title("Receivers")
-
-    name = st.text_input("Receiver Name")
-
-    if st.button("Add Receiver"):
-        if name:
-            cursor.execute("INSERT INTO receivers (name) VALUES (?)", (name,))
-            conn.commit()
-            st.success("Receiver Added")
+    st.title("Receivers Data")
 
     df = pd.read_sql("SELECT * FROM receivers", conn)
-    st.dataframe(df)
+    st.dataframe(df, use_container_width=True)
 
 # ---------------- FOOD ----------------
 elif page == "Food":
 
-    st.title("Food Management")
+    st.title("Food Listings")
 
-    action = st.selectbox("Action", ["View", "Add"])
-
-    if action == "View":
-        df = pd.read_sql("SELECT * FROM food", conn)
-        st.dataframe(df)
-
-    elif action == "Add":
-
-        provider_id = st.number_input("Provider ID", step=1)
-        food_name = st.text_input("Food Name")
-        quantity = st.number_input("Quantity", step=1)
-
-        if st.button("Add Food"):
-
-            cursor.execute("""
-            INSERT INTO food (food_name, quantity, provider_id)
-            VALUES (?, ?, ?)
-            """, (food_name, quantity, provider_id))
-
-            conn.commit()
-            st.success("Food Added")
+    df = pd.read_sql("SELECT * FROM food", conn)
+    st.dataframe(df, use_container_width=True)
 
 # ---------------- CLAIMS ----------------
 elif page == "Claims":
 
-    st.title("Claims")
+    st.title("Claims Data")
 
     df = pd.read_sql("SELECT * FROM claims", conn)
-    st.dataframe(df)
+    st.dataframe(df, use_container_width=True)
 
 # ---------------- ANALYSIS ----------------
 elif page == "Analysis":
 
-    st.title("SQL Analysis")
+    st.title("Data Analysis")
 
-    option = st.selectbox("Choose", ["Top Providers", "Total Food"])
+    option = st.selectbox("Choose Analysis", [
+        "Total Food Available",
+        "Top Providers"
+    ])
 
-    if option == "Total Food":
-        df = pd.read_sql("SELECT SUM(quantity) AS total FROM food", conn)
+    if option == "Total Food Available":
+        df = pd.read_sql("SELECT SUM(quantity) AS total_food FROM food", conn)
 
     elif option == "Top Providers":
         df = pd.read_sql("""
             SELECT provider_id, SUM(quantity) AS total
             FROM food
             GROUP BY provider_id
+            ORDER BY total DESC
         """, conn)
 
     st.dataframe(df)
