@@ -2,6 +2,16 @@ import streamlit as st
 import pandas as pd
 from db_connection import get_connection
 conn = get_connection()
+import os
+
+if os.path.exists("local_food_wastage.db"):
+    os.remove("local_food_wastage.db")
+cursor.execute("CREATE TABLE IF NOT EXISTS food (...)")
+cursor.execute("CREATE TABLE IF NOT EXISTS providers (...)")
+cursor.execute("CREATE TABLE IF NOT EXISTS receivers (...)")
+cursor.execute("CREATE TABLE IF NOT EXISTS claims (...)")
+
+
 import sqlite3
 
 conn = sqlite3.connect("local_food_wastage.db")
