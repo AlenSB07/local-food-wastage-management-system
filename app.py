@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from db_connection import get_connection
+conn = get_connection()
 import sqlite3
 
 conn = sqlite3.connect("local_food_wastage.db")
