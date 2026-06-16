@@ -88,7 +88,7 @@ if page=="Dashboard":
     )
 
     food=pd.read_sql(
-        "SELECT COUNT(*) total FROM food_listings",
+        "SELECT COUNT(*) total FROM food",
         conn
     )
 
@@ -224,7 +224,7 @@ elif page=="Manage Food":
     if action=="View":
 
         df=pd.read_sql(
-            "SELECT * FROM food_listings",
+            "SELECT * FROM food",
             conn
         )
 
@@ -257,7 +257,7 @@ elif page=="Manage Food":
 
             cur.execute(
                 """
-                INSERT INTO food_listings
+                INSERT INTO food
                 (Provider_ID,Food_Name,Quantity)
 
                 VALUES
@@ -308,7 +308,7 @@ elif page=="SQL Analysis":
 
         AS Total_Food
 
-        FROM food_listings
+        FROM food
 
         """
 
@@ -324,7 +324,7 @@ elif page=="SQL Analysis":
 
         Total
 
-        FROM food_listings
+        FROM food
 
         GROUP BY Provider_ID
 
