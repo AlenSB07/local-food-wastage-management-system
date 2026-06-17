@@ -1,12 +1,38 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import plotly.express as px
 
-# ---------------- DATABASE ----------------
-conn = sqlite3.connect("local_food_wastage.db", check_same_thread=False)
 
-# ---------------- LOAD CSV ----------------
-def load_csv():
+# ===============================
+# CONFIG
+# ===============================
+
+st.set_page_config(
+    page_title="Local Food Wastage Management",
+    page_icon="🍲",
+    layout="wide"
+)
+
+
+# ===============================
+# DATABASE
+# ===============================
+
+@st.cache_resource
+def get_connection():
+
+    return sqlite3.connect(
+        "local_food_wastage.db",
+        check_same_thread=False
+    )
+
+
+conn = get_connection()
+
+
+@st.cache_data
+def load_data():
 
     pd.read_csv(
         "providers_data.csv"
@@ -45,253 +71,570 @@ def load_csv():
     )
 
 
-load_csv()
+load_data()
 
-# ---------------- CONFIG ----------------
-st.set_page_config(
-    page_title="Local Food Wastage Management",
-    layout="wide"
+
+food = pd.read_sql(
+    "SELECT * FROM food",
+    conn
 )
 
+claims = pd.read_sql(
+    "SELECT * FROM claims",
+    conn
+)
+
+providers = pd.read_sql(
+    "SELECT * FROM providers",
+    conn
+)
+
+receivers = pd.read_sql(
+    "SELECT * FROM receivers",
+    conn
+)
+
+
+# ===============================
+# SIDEBAR
+# ===============================
+
 page = st.sidebar.radio(
+
     "Navigation",
+
     [
+
         "Dashboard",
+
         "Providers",
+
         "Receivers",
+
         "Claims",
+
         "Manage Food",
+
         "SQL Analysis"
+
     ]
 )
 
-# ---------------- DASHBOARD ----------------
+
+st.sidebar.title(
+"🛠️ Dashboard Control Panel"
+)
+
+
+city = st.sidebar.multiselect(
+"📍 Filter by City Location",
+sorted(food["Location"].dropna().unique())
+)
+
+provider = st.sidebar.multiselect(
+"🏢 Filter by Provider Type",
+sorted(food["Provider_Type"].dropna().unique())
+)
+
+meal = st.sidebar.multiselect(
+"⏰ Filter by Meal Time Windows",
+sorted(food["Meal_Type"].dropna().unique())
+)
+
+diet = st.sidebar.multiselect(
+"🥦 Filter by Dietary Food Type",
+sorted(food["Food_Type"].dropna().unique())
+)
+
+
+filtered = food.copy()
+
+
+if city:
+
+    filtered = filtered[
+        filtered["Location"].isin(city)
+    ]
+
+
+if provider:
+
+    filtered = filtered[
+        filtered["Provider_Type"].isin(provider)
+    ]
+
+
+if meal:
+
+    filtered = filtered[
+        filtered["Meal_Type"].isin(meal)
+    ]
+
+
+if diet:
+
+    filtered = filtered[
+        filtered["Food_Type"].isin(diet)
+    ]
+
+
+filtered_claims = claims.merge(
+
+    filtered[
+        ["Food_ID"]
+    ],
+
+    on="Food_ID",
+
+    how="inner"
+)
+
+
+# ===============================
+# DASHBOARD
+# ===============================
+
 if page == "Dashboard":
 
-    st.title("🍲 Local Food Wastage Dashboard")
 
-    p = pd.read_sql(
-        "SELECT COUNT(*) total FROM providers",
-        conn
+    st.title(
+    "🍲 Local Food Wastage Management Dashboard"
     )
 
-    r = pd.read_sql(
-        "SELECT COUNT(*) total FROM receivers",
-        conn
+    st.caption(
+    "Production Analytical Workspace"
     )
 
-    f = pd.read_sql(
-        "SELECT COUNT(*) total FROM food",
-        conn
+
+    c1,c2,c3,c4=st.columns(4)
+
+
+    c1.metric(
+        "📦 Total Food Items",
+        filtered["Food_ID"].nunique()
     )
 
-    c = pd.read_sql(
-        "SELECT COUNT(*) total FROM claims",
-        conn
+
+    c2.metric(
+        "📊 Food Quantity",
+        int(
+            filtered["Quantity"].sum()
+        )
     )
 
-    c1, c2, c3, c4 = st.columns(4)
 
-    c1.metric("Providers", p.iloc[0, 0])
-    c2.metric("Receivers", r.iloc[0, 0])
-    c3.metric("Food Listings", f.iloc[0, 0])
-    c4.metric("Claims", c.iloc[0, 0])
+    completed = filtered_claims[
+        filtered_claims[
+            "Status"
+        ]=="Completed"
+    ]
 
-# ---------------- PROVIDERS ----------------
-elif page == "Providers":
 
-    st.title("Providers")
-
-    df = pd.read_sql(
-        "SELECT * FROM providers",
-        conn
+    c3.metric(
+        "✅ Completed Claims",
+        len(completed)
     )
 
-    city = st.selectbox(
-        "Filter City",
-        ["All"] +
-        sorted(df["city"].dropna().unique())
+
+    rate=0
+
+
+    if len(filtered_claims)>0:
+
+        rate=(
+            len(completed)
+            /
+            len(filtered_claims)
+        )*100
+
+
+    c4.metric(
+        "📈 Success Rate",
+        f"{rate:.2f}%"
     )
 
-    if city != "All":
-        df = df[
-            df["city"] == city
+
+    st.divider()
+
+
+    left,right=st.columns(2)
+
+
+    with left:
+
+        chart=(
+
+            filtered
+
+            .groupby(
+                "Location"
+            )
+
+            [
+                "Quantity"
+            ]
+
+            .sum()
+
+            .reset_index()
+
+        )
+
+
+        fig=px.bar(
+
+            chart,
+
+            x="Location",
+
+            y="Quantity",
+
+            color="Location"
+
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+
+    with right:
+
+
+        demand=(
+
+            filtered_claims
+
+            .merge(
+                filtered,
+                on="Food_ID"
+            )
+
+            .groupby(
+                "Meal_Type"
+            )
+
+            .size()
+
+            .reset_index(
+                name="Claims"
+            )
+
+        )
+
+
+        fig=px.pie(
+
+            demand,
+
+            names="Meal_Type",
+
+            values="Claims",
+
+            hole=.55
+
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+
+    left2,right2=st.columns(2)
+
+
+    with left2:
+
+
+        group=(
+
+            filtered
+
+            .groupby(
+
+                [
+                    "Meal_Type",
+
+                    "Food_Type"
+
+                ]
+
+            )
+
+            .size()
+
+            .reset_index(
+                name="Count"
+            )
+
+        )
+
+
+        fig=px.bar(
+
+            group,
+
+            x="Meal_Type",
+
+            y="Count",
+
+            color="Food_Type",
+
+            barmode="group"
+
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+
+    with right2:
+
+
+        status=(
+
+            filtered_claims
+
+            ["Status"]
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+
+        status.columns=[
+
+            "Status",
+
+            "Count"
+
         ]
 
+
+        fig=px.bar(
+
+            status,
+
+            x="Count",
+
+            y="Status",
+
+            orientation="h",
+
+            color="Status"
+
+        )
+
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+
+    st.subheader(
+        "🔍 Search Records"
+    )
+
+
+    search=st.text_input(
+        "Search"
+    )
+
+
+    table=filtered.merge(
+
+        filtered_claims,
+
+        on="Food_ID",
+
+        how="left"
+
+    )
+
+
+    if search:
+
+
+        table=table[
+
+            table
+
+            .astype(str)
+
+            .apply(
+
+                lambda x:
+
+                x.str.contains(
+
+                    search,
+
+                    case=False
+
+                )
+
+            )
+
+            .any(
+                axis=1
+            )
+
+        ]
+
+
     st.dataframe(
-        df,
+        table,
         use_container_width=True
     )
 
-# ---------------- RECEIVERS ----------------
-elif page == "Receivers":
 
-    st.title("Receivers")
+# ===============================
+# PROVIDERS
+# ===============================
 
-    df = pd.read_sql(
-        "SELECT * FROM receivers",
-        conn
+elif page=="Providers":
+
+    st.title(
+        "Providers"
     )
-
-    city = st.selectbox(
-        "Filter City",
-        ["All"] +
-        sorted(df["City"].dropna().unique())
-    )
-
-    if city != "All":
-
-        df = df[
-            df["City"] == city
-        ]
 
     st.dataframe(
-        df,
+        providers,
         use_container_width=True
     )
 
-# ---------------- CLAIMS ----------------
-elif page == "Claims":
 
-    st.title("Claims")
+# ===============================
+# RECEIVERS
+# ===============================
 
-    df = pd.read_sql(
-        "SELECT * FROM claims",
-        conn
+elif page=="Receivers":
+
+    st.title(
+        "Receivers"
     )
-
-    status = st.selectbox(
-        "Status",
-        ["All"] +
-        sorted(df["Status"].dropna().unique())
-    )
-
-    if status != "All":
-
-        df = df[
-            df["Status"] == status
-        ]
 
     st.dataframe(
-        df,
+        receivers,
         use_container_width=True
     )
 
-# ---------------- MANAGE FOOD ----------------
-elif page == "Manage Food":
 
-    st.title("Manage Food")
+# ===============================
+# CLAIMS
+# ===============================
 
-    df = pd.read_sql(
-        "SELECT * FROM food",
-        conn
+elif page=="Claims":
+
+    st.title(
+        "Claims"
     )
-
-    location = st.selectbox(
-        "Location",
-        ["All"] +
-        sorted(df["Location"].dropna().unique())
-    )
-
-    food_type = st.selectbox(
-        "Food Type",
-        ["All"] +
-        sorted(df["Food_Type"].dropna().unique())
-    )
-
-    meal = st.selectbox(
-        "Meal Type",
-        ["All"] +
-        sorted(df["Meal_Type"].dropna().unique())
-    )
-
-    if location != "All":
-        df = df[
-            df["Location"] == location
-        ]
-
-    if food_type != "All":
-        df = df[
-            df["Food_Type"] == food_type
-        ]
-
-    if meal != "All":
-        df = df[
-            df["Meal_Type"] == meal
-        ]
 
     st.dataframe(
-        df,
+        claims,
         use_container_width=True
     )
 
-# ---------------- SQL ANALYSIS ----------------
-elif page == "SQL Analysis":
 
-    st.title("SQL Analysis")
+# ===============================
+# FOOD
+# ===============================
 
-    query = st.selectbox(
-        "Choose Query",
+elif page=="Manage Food":
+
+    st.title(
+        "Food Listings"
+    )
+
+    st.dataframe(
+        filtered,
+        use_container_width=True
+    )
+
+
+# ===============================
+# SQL
+# ===============================
+
+elif page=="SQL Analysis":
+
+    st.title(
+        "SQL Analysis"
+    )
+
+
+    q=st.selectbox(
+
+        "Query",
+
         [
-            "Total Food Available",
-            "Top Provider",
-            "Claim Status"
+
+            "Total Food",
+
+            "Top Provider"
+
         ]
+
     )
 
-    if query == "Total Food Available":
 
-        sql = """
-        SELECT
-        SUM(Quantity)
-        AS Total
-        FROM food
-        """
+    if q=="Total Food":
 
-    elif query == "Top Provider":
+        st.metric(
 
-        sql = """
-        SELECT
-        Provider_ID,
-        SUM(Quantity)
-        AS Total
+            "Total",
 
-        FROM food
+            int(
 
-        GROUP BY Provider_ID
+                food[
+                    "Quantity"
+                ].sum()
 
-        ORDER BY Total DESC
-        """
+            )
+
+        )
+
 
     else:
 
-        sql = """
 
-        SELECT
+        r=(
 
-        Status,
+            food
 
-        COUNT(*)
-        AS Total
+            .groupby(
+                "Provider_ID"
+            )
 
-        FROM claims
+            [
+                "Quantity"
+            ]
 
-        GROUP BY Status
+            .sum()
 
-        """
+            .sort_values(
+                ascending=False
+            )
 
-    result = pd.read_sql(
-        sql,
-        conn
-    )
+            .head(10)
 
-    st.dataframe(
-        result,
-        use_container_width=True
-    )
+        )
+
+
+        st.bar_chart(
+            r
+        )
+
 
 st.divider()
 
 st.caption(
-    "Developed using Streamlit + SQLite"
+"Developed using Streamlit + SQLite"
 )
